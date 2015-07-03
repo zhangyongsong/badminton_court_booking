@@ -1,0 +1,4 @@
+rsa
+requests
+beautifulsoup4
+ipython

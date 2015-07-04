@@ -1,8 +1,11 @@
+import datetime
+import time
 import requests
 import rsa
 import base64
 from bs4 import BeautifulSoup
 from auth import USERNAME, PASSWORD, PIN
+from settings import ACTIVITY, VENUE_ID, FORWARD_BOOKING_DAYS
 
 
 class CourtBooking(object):
@@ -11,6 +14,7 @@ class CourtBooking(object):
         self.custom_headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.130 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         }
 
     def login(self):
@@ -21,10 +25,8 @@ class CourtBooking(object):
 
         publickey = rsa.PublicKey.load_pkcs1_openssl_pem(public_key_text)
         ec_password = base64.b64encode(rsa.encrypt(PASSWORD, publickey))
-        print 'encrypted password:', ec_password
 
         csrf_token = soup.find('input', {'name': '_csrf'})['value']
-        print 'csrf_token:', csrf_token
 
         data_dict = {
             'email': USERNAME,
@@ -33,18 +35,91 @@ class CourtBooking(object):
         }
 
         login_r = self.client.post('https://members.myactivesg.com/auth/signin', headers=self.custom_headers, data=data_dict)
+        self.custom_headers['Referer'] = login_r.url  # Referer is checked for processing
         print login_r.url
 
+    def add_available_courts(self):
+        book_date = datetime.date.today() + datetime.timedelta(days=FORWARD_BOOKING_DAYS)
+        book_timestamp = int(time.mktime(book_date.timetuple()))
+        chosen_date = book_date.strftime('%Y-%m-%d')
+
+        facilities_url = 'https://members.myactivesg.com/facilities/view/activity/%d/venue/%d?time_from=%d' % (
+            ACTIVITY, VENUE_ID, book_timestamp)
+
+        courts_response = self.client.get(facilities_url, headers=self.custom_headers)
+        self.custom_headers['Referer'] = courts_response.url
+
+        soup = BeautifulSoup(courts_response.content, "html.parser")
+
+        form = soup.select('#formTimeslots')[0]
+        form_action = form.attrs['action']
+
+        hidden_input = soup.select('.timeslot-container > input')[0]
+        hidden_name = hidden_input.attrs['name']
+        hidden_value = hidden_input.attrs['value']
+
+        fdscv_input = soup.select('input[name=fdscv]')[0]
+        fdscv_value = fdscv_input.attrs['value']
+
+        all_court_slots = soup.find_all('input', {'type': 'checkbox', 'name': 'timeslots[]'})
+
+        first_court = ''
+        second_court = ''
+        for slot in all_court_slots:
+            slot_value = slot.attrs['value']
+            if not first_court and slot_value.find('Court') == 0 and slot_value.find('14:00:00;15:00:00') > -1:
+                first_court = slot_value
+            elif not second_court and slot_value.find('Court') == 0 and slot_value.find('15:00:00;16:00:00') > -1:
+                second_court = slot_value
+
+            if first_court and second_court:
+                break
+
+        cart_data = {
+            'activity_id': ACTIVITY,
+            'venue_id': VENUE_ID,
+            'chosen_date': chosen_date,
+            hidden_name: hidden_value,
+            'timeslots[]': [first_court, second_court],
+            'cart': 'ADD TO CART',
+            'fdscv': fdscv_value,
+        }
+        import pprint
+        pprint.pprint(cart_data)
+        print 'url', form_action
+        cart_response = self.client.post(form_action, data=cart_data, headers=self.custom_headers)
+        self.custom_headers['Referer'] = cart_response.url
+
+        print cart_response.status_code
 
 
+    def checkout_cart(self):
+        cart_url = 'https://members.myactivesg.com/cart'
+        cart_response = self.client.get(cart_url, headers=self.custom_headers)
+        self.custom_headers['Referer'] = cart_response.url
 
+        soup = BeautifulSoup(cart_response.content, 'html.parser')
+        rsa_hidden_pk = soup.select('input[name=rsapublickey]')[0]
+        public_key_text = rsa_hidden_pk.attrs['value']
+        publickey = rsa.PublicKey.load_pkcs1_openssl_pem(public_key_text)
+        ec_password = base64.b64encode(rsa.encrypt(PIN, publickey))
 
+        print 'ec_password', ec_password
 
+        cart_data = {
+            'payment_mode': 'ewallet',
+            'ecpassword': ec_password,
+            'pay': 'PAY NOW',
+        }
 
+        pay_response = self.client.post(cart_url, data=cart_data, headers=self.custom_headers)
+        self.custom_headers['Referer'] = pay_response.url
 
-
+        print pay_response.url
 
 
 if __name__ == '__main__':
     booking = CourtBooking()
     booking.login()
+    booking.add_available_courts()
+    booking.checkout_cart()

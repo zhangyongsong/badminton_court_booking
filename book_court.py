@@ -58,8 +58,8 @@ class CourtBooking(object):
         hidden_name = hidden_input.attrs['name']
         hidden_value = hidden_input.attrs['value']
 
-        fdscv_input = soup.select('input[name=fdscv]')[0]
-        fdscv_value = fdscv_input.attrs['value']
+        # fdscv_input = soup.select('input[name=fdscv]')[0]
+        # fdscv_value = fdscv_input.attrs['value']
 
         all_court_slots = soup.find_all('input', {'type': 'checkbox', 'name': 'timeslots[]'})
 
@@ -82,7 +82,7 @@ class CourtBooking(object):
             hidden_name: hidden_value,
             'timeslots[]': [first_court, second_court],
             'cart': 'ADD TO CART',
-            'fdscv': fdscv_value,
+            # 'fdscv': fdscv_value,
         }
         import pprint
         pprint.pprint(cart_data)

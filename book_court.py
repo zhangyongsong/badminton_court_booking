@@ -7,6 +7,20 @@ from bs4 import BeautifulSoup
 from auth import USERNAME, PASSWORD, PIN
 from settings import ACTIVITY, VENUE_ID, FORWARD_BOOKING_DAYS
 
+def retry_on_failure(times=5, timeout=10):
+    def retry_wrapper(func):
+        def inner_wrapper(*args, **kwargs):
+            for i in range(times):
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except:
+                    print 'Error occurred. Sleep for %d seconds and retry.' % timeout
+                    time.sleep(timeout)
+            # Failed after retrying times
+            raise
+        return inner_wrapper
+    return retry_wrapper
 
 class CourtBooking(object):
     def __init__(self):
@@ -38,8 +52,11 @@ class CourtBooking(object):
         self.custom_headers['Referer'] = login_r.url  # Referer is checked for processing
         print login_r.url
 
+    @retry_on_failure(times=5)
     def add_available_courts(self):
         book_date = datetime.date.today() + datetime.timedelta(days=FORWARD_BOOKING_DAYS)
+        print 'Target Booking date: %s' % str(book_date)
+
         book_timestamp = int(time.mktime(book_date.timetuple()))
         chosen_date = book_date.strftime('%Y-%m-%d')
 
@@ -74,6 +91,10 @@ class CourtBooking(object):
 
             if first_court and second_court:
                 break
+
+        if not first_court or not second_court:
+            print 'Error... Available courts not found!'
+            raise ValueError
 
         cart_data = {
             'activity_id': ACTIVITY,
@@ -119,7 +140,12 @@ class CourtBooking(object):
 
 
 if __name__ == '__main__':
+    now = datetime.datetime.now()
+    print '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
+    print 'Booking on %s' % (str(now))
     booking = CourtBooking()
     booking.login()
     booking.add_available_courts()
     booking.checkout_cart()
+    print 'Booking complete.\n'
+    print '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'

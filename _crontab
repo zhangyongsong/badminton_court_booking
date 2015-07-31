@@ -1,0 +1,2 @@
+# Saturday 7:00 AM
+0 7 * * 6 (workon court_booking; cd /media/sf_Workspace/zhang-repo/badminton_court_booking; python book_court.py >> /tmp/court_booking.log 2>&1)
